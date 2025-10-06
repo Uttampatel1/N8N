@@ -1,0 +1,554 @@
+{
+  "name": "Updated Uttam's Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8a5c7dc4-e43d-464d-ae71-2bbf8ed5aa9c",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        480,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the provided product image and generate SEO-optimized metadata in JSON format.\n\n**Product Context:**\n- Title: {{ $json.Title }}\n- Description: {{ $json['Body HTML'] }}\n- Handle: {{ $json.Handle }}\n- SKU: {{ $json['Variant SKU'] }}\n- Image Type: {{ $json['Image Type'] }}\n- Image URL: {{ $json['Image Src'] }}\n\n**Required JSON Output Format:**\n```json\n{\n  \"handle\": \"{{ $json.Handle }}\",\n  \"variant_sku\": \"{{ $json['Variant SKU'] }}\",\n  \"image_type\": \"{{ $json['Image Type'] }}\",\n  \"image_url\": \"{{ $json['Image Src'] }}\",\n  \"alt_text\": \"<descriptive alt text, max 125 chars, NO 'image of' or 'picture of'>\",\n  \"new_filename\": \"<lowercase-hyphenated-filename-5-7-words.jpg>\"\n}\n```\n\n**Guidelines:**\n1. Output ONLY valid JSON - no markdown, no backticks, no extra text\n2. Alt text: descriptive, SEO-friendly, under 125 characters\n3. Filename: lowercase, hyphenated, 5-7 words, ends with .jpg\n4. Use exact values for handle, variant_sku, image_type, and image_url from the product context\n\nProvide the JSON output now.",
+        "options": {
+          "systemMessage": "You are an expert e-commerce SEO specialist and image analyst for a tile and flooring company. Your role is to analyze product images and generate accurate, SEO-optimized metadata. Always output valid JSON without any markdown formatting or explanations.",
+          "passthroughBinaryImages": true
+        }
+      },
+      "id": "c360eaa0-d9ab-456e-a266-33d181c5fb89",
+      "name": "AI Agent Vision Analysis",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        -112
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1lpXDkiTUaPLijZWy69CzUJqiGqX70uQpdrdaclipmys",
+          "mode": "list",
+          "cachedResultName": "products-apollo-export",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lpXDkiTUaPLijZWy69CzUJqiGqX70uQpdrdaclipmys/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lpXDkiTUaPLijZWy69CzUJqiGqX70uQpdrdaclipmys/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "4e319e95-686e-4c3e-b757-cf9e8bdc1367",
+      "name": "Get Rows from Sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        368,
+        -128
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YDxu0zqzKwkFYFka",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.Status }}",
+              "rightValue": "=Done",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "condition-2",
+              "leftValue": "={{ $json['Image Type'] }}",
+              "rightValue": "IMAGE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "001bc2e7-cd25-4533-bd4f-df9631a987df",
+      "name": "Filter Incomplete Images1",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        592,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json['Image Src'] }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "48f7526b-49ef-4d52-a814-1d2b81e4ea63",
+      "name": "Download Image1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1376,
+        -64
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI Agent output and clean JSON\nconst results = [];\n\nfor (const item of items) {\n  let rawText = item.json.output || \"\";\n  \n  // Remove markdown code blocks if present\n  rawText = rawText.replace(/```json\\s*/g, \"\").replace(/```\\s*/g, \"\").trim();\n  \n  try {\n    const parsed = JSON.parse(rawText);\n    \n    // Validate and normalize the output\n    results.push({\n      json: {\n        Handle: parsed.handle || \"\",\n        ImageURL: parsed.image_url || \"\",\n        \"Image Type\": parsed.image_type || \"\",\n        \"Variant SKU\": parsed.variant_sku || \"\",\n        \"Image Alt Text\": parsed.alt_text || \"\",\n        Filename: parsed.new_filename || \"\",\n        row_number: item.json.row_number\n      }\n    });\n  } catch (err) {\n    // Log error and create placeholder\n    console.error('Failed to parse JSON:', err.message);\n    results.push({\n      json: {\n        Handle: item.json.Handle || \"\",\n        ImageURL: item.json.ImageURL || \"\",\n        \"Image Type\": item.json[\"Image Type\"] || \"\",\n        \"Variant SKU\": item.json[\"Variant SKU\"] || \"\",\n        \"Image Alt Text\": \"⚠️ Failed to parse - manual review needed\",\n        Filename: \"error-\" + Date.now() + \".jpg\",\n        row_number: item.json.row_number\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "a22892bf-ee64-402a-939a-0562b98a2364",
+      "name": "Parse & Clean JSON1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1lpXDkiTUaPLijZWy69CzUJqiGqX70uQpdrdaclipmys",
+          "mode": "list",
+          "cachedResultName": "products-apollo-export",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lpXDkiTUaPLijZWy69CzUJqiGqX70uQpdrdaclipmys/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lpXDkiTUaPLijZWy69CzUJqiGqX70uQpdrdaclipmys/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "SR": "={{ $('Get Rows from Sheet1').item.json.SR }}",
+            "ID": "={{ $('Get Rows from Sheet1').item.json.ID }}",
+            "New File Name": "={{ $json.Filename }}",
+            "Status": "Done",
+            "Image Alt Text": "={{ $json['Image Alt Text'] }}"
+          },
+          "matchingColumns": [
+            "SR"
+          ],
+          "schema": [
+            {
+              "id": "SR",
+              "displayName": "SR",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Option1 Value",
+              "displayName": "Option1 Value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Variant SKU",
+              "displayName": "Variant SKU",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Body HTML",
+              "displayName": "Body HTML",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Handle",
+              "displayName": "Handle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image Type",
+              "displayName": "Image Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image Src",
+              "displayName": "Image Src",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image",
+              "displayName": "Image",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image Command",
+              "displayName": "Image Command",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image Position",
+              "displayName": "Image Position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image Alt Text",
+              "displayName": "Image Alt Text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Command",
+              "displayName": "Command",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "New File Name",
+              "displayName": "New File Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "33cc14e0-400b-41b9-9dd9-cc5e63ac9bb1",
+      "name": "Update Sheet with Results1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1920,
+        144
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YDxu0zqzKwkFYFka",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "maxItems": 5000
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        816,
+        -128
+      ],
+      "id": "ff69b058-4bc8-48c2-a5c8-2eae9a703b5b",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1088,
+        -112
+      ],
+      "id": "00086589-fff3-4dcb-88cd-f31c43238c1d",
+      "name": "Loop Over Items",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2144,
+        144
+      ],
+      "id": "ea6c298e-affa-46ae-82b9-63bbb5857caf",
+      "name": "Wait",
+      "webhookId": "1f61b6e1-55fc-48c4-96b9-88ca7fec4e43"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1552,
+        80
+      ],
+      "id": "135fc2f3-de13-4f43-b3f9-2ee3a479ee7e",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "3QHhzp5KZvPU9LTZ",
+          "name": "OpenAi account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Rows from Sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Vision Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse & Clean JSON1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Rows from Sheet1": {
+      "main": [
+        [
+          {
+            "node": "Filter Incomplete Images1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Incomplete Images1": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent Vision Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Clean JSON1": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet with Results1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Download Image1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sheet with Results1": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Vision Analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a2c718ef-c90d-4dc8-8db8-341a6f93e5d3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a13a97cb7e1cfe9205e3d5582ac2cb4d3240ba53b4acad047fbeb325d1d27ff9"
+  },
+  "id": "JWiURTmkukagRQEn",
+  "tags": []
+}
